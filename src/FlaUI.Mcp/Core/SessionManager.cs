@@ -11,19 +11,31 @@ namespace PlaywrightWindows.Mcp.Core;
 public class SessionManager : IDisposable
 {
     private readonly UIA3Automation _automation;
+    private readonly ProcessScope _scope;
     private readonly Dictionary<string, FlaUIApplication> _applications = new();
     private readonly Dictionary<string, Window> _windows = new();
     private int _windowCounter = 0;
 
-    public SessionManager()
+    public SessionManager(ProcessScope scope)
     {
+        _scope = scope;
         _automation = new UIA3Automation();
     }
 
     public UIA3Automation Automation => _automation;
 
+    public bool IsInScope(AutomationElement element)
+    {
+        return _scope.Allows(element);
+    }
+
     public (string handle, Window window) LaunchApp(string appPath, string[]? args = null)
     {
+        if (!_scope.AllowsLaunch(appPath))
+        {
+            throw new Exception($"Only {_scope.AppName}.exe can be launched");
+        }
+
         // Use Process.Start for more reliable launching
         var psi = new System.Diagnostics.ProcessStartInfo
         {
@@ -37,7 +49,9 @@ public class SessionManager : IDisposable
         {
             throw new Exception($"Failed to start process: {appPath}");
         }
-        
+
+        _scope.AddLaunchedProcess(process.Id);
+
         // Wait for the process to be ready
         try
         {
@@ -75,7 +89,7 @@ public class SessionManager : IDisposable
                 foreach (var w in windows)
                 {
                     var win = w.AsWindow();
-                    if (win != null && !string.IsNullOrEmpty(win.Title))
+                    if (win != null && !string.IsNullOrEmpty(win.Title) && _scope.Allows(win))
                     {
                         // Check if this looks like our app
                         var title = win.Title.ToLowerInvariant();
@@ -101,20 +115,31 @@ public class SessionManager : IDisposable
 
     public (string handle, Window window) AttachToWindow(string title)
     {
-        var desktop = _automation.GetDesktop();
-        var window = desktop.FindFirstDescendant(cf => cf.ByName(title))?.AsWindow();
-        
-        if (window == null)
+        foreach (var window in FindScopedWindows())
         {
-            throw new Exception($"Window not found: {title}");
+            if (window.Title == title)
+            {
+                return (RegisterWindow(window), window);
+            }
+
+            var child = window.FindFirstDescendant(cf => cf.ByName(title));
+            if (child != null)
+            {
+                var childWindow = child.AsWindow();
+                return (RegisterWindow(childWindow), childWindow);
+            }
         }
 
-        var handle = RegisterWindow(window);
-        return (handle, window);
+        throw new Exception($"Window not found: {title}");
     }
 
     public string RegisterWindow(Window window)
     {
+        if (!_scope.Allows(window))
+        {
+            throw new Exception("Window is outside the allowed process scope");
+        }
+
         var handle = $"w{++_windowCounter}";
         _windows[handle] = window;
         return handle;
@@ -127,14 +152,10 @@ public class SessionManager : IDisposable
 
     public List<(string handle, string title, string? processName)> ListWindows()
     {
-        var desktop = _automation.GetDesktop();
-        var windows = desktop.FindAllChildren(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Window));
-        
         var result = new List<(string, string, string?)>();
-        foreach (var w in windows)
+        foreach (var window in FindScopedWindows())
         {
-            var window = w.AsWindow();
-            if (window != null && !string.IsNullOrEmpty(window.Title))
+            if (!string.IsNullOrEmpty(window.Title))
             {
                 var handle = RegisterWindow(window);
                 string? processName = null;
@@ -147,6 +168,22 @@ public class SessionManager : IDisposable
                 catch { }
                 
                 result.Add((handle, window.Title, processName));
+            }
+        }
+        return result;
+    }
+
+    private List<Window> FindScopedWindows()
+    {
+        var desktop = _automation.GetDesktop();
+        var elements = desktop.FindAllChildren(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Window));
+
+        var result = new List<Window>();
+        foreach (var element in elements)
+        {
+            if (_scope.Allows(element))
+            {
+                result.Add(element.AsWindow());
             }
         }
         return result;

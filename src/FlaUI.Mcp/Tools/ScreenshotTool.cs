@@ -38,11 +38,6 @@ public class ScreenshotTool : ToolBase
                 type = "string",
                 description = "Element ref to capture. If omitted, captures the whole window."
             },
-            fullScreen = new
-            {
-                type = "boolean",
-                description = "Capture the entire screen (default: false)"
-            },
             background = new
             {
                 type = "boolean",
@@ -70,6 +65,11 @@ public class ScreenshotTool : ToolBase
         var savePath = GetStringArgument(arguments, "savePath");
         var overwrite = GetBoolArgument(arguments, "overwrite", false);
 
+        if (fullScreen)
+        {
+            return Task.FromResult(ErrorResult("fullScreen capture is not allowed because it can show other applications"));
+        }
+
         if (!TryNormalizeSavePath(savePath, overwrite, out var normalizedSavePath, out var pathError))
         {
             return Task.FromResult(ErrorResult(pathError));
@@ -79,16 +79,12 @@ public class ScreenshotTool : ToolBase
         {
             CaptureImage capture;
 
-            if (background && (fullScreen || !string.IsNullOrEmpty(refId) || string.IsNullOrEmpty(handle)))
+            if (background && (!string.IsNullOrEmpty(refId) || string.IsNullOrEmpty(handle)))
             {
-                return Task.FromResult(ErrorResult("background capture requires a window handle and cannot be combined with ref or fullScreen"));
+                return Task.FromResult(ErrorResult("background capture requires a window handle and cannot be combined with ref"));
             }
 
-            if (fullScreen)
-            {
-                capture = Capture.Screen();
-            }
-            else if (!string.IsNullOrEmpty(refId))
+            if (!string.IsNullOrEmpty(refId))
             {
                 var element = _elementRegistry.GetElement(refId);
                 if (element == null)
@@ -131,6 +127,11 @@ public class ScreenshotTool : ToolBase
                 if (current == null)
                 {
                     return Task.FromResult(ErrorResult("Could not find window for focused element"));
+                }
+
+                if (!_sessionManager.IsInScope(current))
+                {
+                    return Task.FromResult(ErrorResult("Foreground window is outside the allowed process scope"));
                 }
 
                 capture = Capture.Element(current);

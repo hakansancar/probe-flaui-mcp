@@ -18,14 +18,16 @@ public class TestAppFixture : IAsyncLifetime
     private const int WindowPollIntervalMs = 250;
     private const int WindowPollTimeoutMs = 15000;
 
-    public SessionManager Session { get; } = new();
+    public SessionManager Session { get; } = new(ProcessScope.Parse(new[] { "--app", "WinFormsTestApp" }));
     public ElementRegistry Elements { get; } = new();
 
     public string WinFormsHandle { get; private set; } = "";
-    public string WpfHandle { get; private set; } = "";
+    public string WpfHandle { get; } = "wpf";
+    public int WinFormsProcessId => _winFormsProcess!.Id;
 
     private Process? _winFormsProcess;
     private Process? _wpfProcess;
+    private Window? _wpfWindow;
 
     public async Task InitializeAsync()
     {
@@ -44,7 +46,7 @@ public class TestAppFixture : IAsyncLifetime
         // Poll for both windows to appear
         var sw = Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < WindowPollTimeoutMs
-               && (WinFormsHandle == "" || WpfHandle == ""))
+               && (WinFormsHandle == "" || _wpfWindow == null))
         {
             await Task.Delay(WindowPollIntervalMs);
 
@@ -62,16 +64,16 @@ public class TestAppFixture : IAsyncLifetime
                 }
                 else if (win?.Title == "FlaUI-MCP WPF Test App"
                          && processId == wpfProcessId
-                         && WpfHandle == "")
+                         && _wpfWindow == null)
                 {
-                    WpfHandle = Session.RegisterWindow(win);
+                    _wpfWindow = win;
                 }
             }
         }
 
         if (WinFormsHandle == "")
             throw new Exception("Timed out waiting for WinForms test app window.");
-        if (WpfHandle == "")
+        if (_wpfWindow == null)
             throw new Exception("Timed out waiting for WPF test app window.");
     }
 
@@ -112,7 +114,7 @@ public class TestAppFixture : IAsyncLifetime
     }
 
     public Window? GetWinFormsWindow() => Session.GetWindow(WinFormsHandle);
-    public Window? GetWpfWindow() => Session.GetWindow(WpfHandle);
+    public Window? GetWpfWindow() => _wpfWindow;
 
     /// <summary>
     /// Call an MCP tool with the given arguments and return the text result.
@@ -132,7 +134,7 @@ public class TestAppFixture : IAsyncLifetime
     public string TakeSnapshot(string handle)
     {
         var builder = new SnapshotBuilder(Elements);
-        var window = Session.GetWindow(handle)!;
+        var window = handle == WpfHandle ? _wpfWindow! : Session.GetWindow(handle)!;
         return builder.BuildSnapshot(handle, window);
     }
 

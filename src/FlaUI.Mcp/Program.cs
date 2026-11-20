@@ -2,14 +2,27 @@ using PlaywrightWindows.Mcp;
 using PlaywrightWindows.Mcp.Core;
 using PlaywrightWindows.Mcp.Tools;
 
+ProcessScope scope;
+try
+{
+    scope = ProcessScope.Parse(args);
+    scope.Validate();
+}
+catch (ArgumentException ex)
+{
+    Console.Error.WriteLine($"Error: {ex.Message}");
+    Console.Error.WriteLine("Usage: FlaUI.Mcp.exe --app <process name> [--pid <process id>]...");
+    return 2;
+}
+
 DpiUtility.EnablePerMonitorV2();
 
 // Create shared services
-var sessionManager = new SessionManager();
+var sessionManager = new SessionManager(scope);
 var elementRegistry = new ElementRegistry();
 
 // Register all tools
-var toolRegistry = new ToolRegistry();
+var toolRegistry = new ToolRegistry(scope: scope);
 toolRegistry.RegisterTool(new LaunchTool(sessionManager));
 toolRegistry.RegisterTool(new SnapshotTool(sessionManager, elementRegistry));
 toolRegistry.RegisterTool(new ClickTool(elementRegistry));
@@ -41,3 +54,5 @@ finally
 {
     sessionManager.Dispose();
 }
+
+return 0;

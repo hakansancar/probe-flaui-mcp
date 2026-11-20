@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PlaywrightWindows.Mcp.Core;
 
 namespace PlaywrightWindows.Mcp;
 
@@ -9,9 +10,11 @@ public class ToolRegistry
 {
     private readonly Dictionary<string, ITool> _tools = new();
     private readonly TimeSpan _toolTimeout;
+    private readonly ProcessScope? _scope;
 
-    public ToolRegistry(TimeSpan? toolTimeout = null)
+    public ToolRegistry(TimeSpan? toolTimeout = null, ProcessScope? scope = null)
     {
+        _scope = scope;
         _toolTimeout = toolTimeout ?? TimeSpan.FromSeconds(30);
         if (_toolTimeout <= TimeSpan.Zero)
         {
@@ -31,6 +34,18 @@ public class ToolRegistry
 
     public async Task<McpToolResult> ExecuteToolAsync(string name, JsonElement? arguments)
     {
+        if (_scope != null && _scope.HasTargetExited())
+        {
+            return new McpToolResult
+            {
+                Content = new List<McpContent>
+                {
+                    new() { Type = "text", Text = $"Target application {_scope.AppName} is not running. All tool calls are rejected." }
+                },
+                IsError = true
+            };
+        }
+
         if (!_tools.TryGetValue(name, out var tool))
         {
             return new McpToolResult
