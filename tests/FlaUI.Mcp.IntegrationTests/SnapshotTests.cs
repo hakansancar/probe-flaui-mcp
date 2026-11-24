@@ -107,6 +107,32 @@ public class SnapshotTests
     }
 
     [Fact]
+    public async Task Wpf_Snapshot_ShowsAutomationIdNextToName()
+    {
+        var tabRef = _fixture.FindRefByName(_fixture.WpfHandle, "Buttons");
+        if (tabRef != null)
+        {
+            await _fixture.CallTool(new ClickTool(_fixture.Elements), new { @ref = tabRef });
+            await Task.Delay(300);
+        }
+
+        var snapshot = _fixture.TakeSnapshot(_fixture.WpfHandle);
+        var line = snapshot.Split('\n').FirstOrDefault(l => l.Contains("\"Click Me\""));
+
+        Assert.NotNull(line);
+        Assert.Contains("[id=ClickMeButton]", line);
+    }
+
+    [Fact]
+    public void Snapshot_DoesNotUseAutomationIdAsName()
+    {
+        var snapshot = _fixture.TakeSnapshot(_fixture.WpfHandle);
+
+        Assert.DoesNotContain("\"[", snapshot);
+        Assert.Contains("[id=", snapshot);
+    }
+
+    [Fact]
     public async Task WinForms_Snapshot_ContainsGridData()
     {
         // Navigate to Grid tab first — WinForms only shows active tab content

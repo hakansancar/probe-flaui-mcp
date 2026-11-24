@@ -38,16 +38,17 @@ public class SnapshotBuilder
         // Skip elements with no meaningful content
         var name = GetElementName(element);
         var role = GetElementRole(element);
-        
+        var automationId = GetAutomationId(element);
+
         // Skip some noise elements, but keep elements with names or important roles
-        if (ShouldSkipElement(element, name, role)) return;
+        if (ShouldSkipElement(element, name, role, automationId)) return;
 
         // Register element and get ref
         var refId = _elementRegistry.Register(windowHandle, element);
 
         // Build the line
         var indent = new string(' ', depth * 2);
-        var line = BuildElementLine(element, refId, name, role);
+        var line = BuildElementLine(element, refId, name, role, automationId);
         sb.AppendLine($"{indent}- {line}");
 
         // Process children
@@ -65,7 +66,7 @@ public class SnapshotBuilder
         }
     }
 
-    private string BuildElementLine(AutomationElement element, string refId, string? name, string role)
+    private string BuildElementLine(AutomationElement element, string refId, string? name, string role, string? automationId)
     {
         var parts = new List<string>();
 
@@ -76,6 +77,11 @@ public class SnapshotBuilder
         if (!string.IsNullOrEmpty(name))
         {
             parts.Add($"\"{EscapeName(name)}\"");
+        }
+
+        if (!string.IsNullOrEmpty(automationId))
+        {
+            parts.Add($"[id={automationId}]");
         }
 
         // Ref
@@ -89,6 +95,19 @@ public class SnapshotBuilder
         }
 
         return string.Join(" ", parts);
+    }
+
+    private static string? GetAutomationId(AutomationElement element)
+    {
+        try
+        {
+            var automationId = element.Properties.AutomationId.ValueOrDefault;
+            return string.IsNullOrWhiteSpace(automationId) ? null : automationId;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private string GetElementRole(AutomationElement element)
@@ -150,13 +169,6 @@ public class SnapshotBuilder
         {
             var name = element.Properties.Name.ValueOrDefault;
             if (!string.IsNullOrWhiteSpace(name)) return name;
-
-            // Try automation ID as fallback for identification
-            var automationId = element.Properties.AutomationId.ValueOrDefault;
-            if (!string.IsNullOrWhiteSpace(automationId) && automationId.Length < 50)
-            {
-                return $"[{automationId}]";
-            }
 
             return null;
         }
@@ -221,10 +233,12 @@ public class SnapshotBuilder
         return states;
     }
 
-    private bool ShouldSkipElement(AutomationElement element, string? name, string role)
+    private bool ShouldSkipElement(AutomationElement element, string? name, string role, string? automationId)
     {
         // Always include named elements
         if (!string.IsNullOrEmpty(name)) return false;
+
+        if (!string.IsNullOrEmpty(automationId)) return false;
 
         // Always include actionable element types
         if (role is "button" or "textbox" or "checkbox" or "radio" or "combobox" 
